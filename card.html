@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mario Memory Flip</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #5c94fc;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Arial Black', sans-serif;
+            color: white;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            width: 460px;
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 0 #000;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(4, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 15px;
+        }
+
+        .card {
+            width: 100px;
+            height: 100px;
+            background: #f8c820;
+            border: 4px solid #b87c00;
+            border-radius: 6px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 50px;
+            color: #b87c00;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.6), 
+                        inset -4px -4px 0 rgba(0, 0, 0, 0.25);
+        }
+
+        .card:hover:not(.flipped):not(.matched):not(.locked-gameover) {
+            transform: scale(1.1);
+        }
+
+        .card.flipped {
+            background: #ffffff;
+            color: #333;
+        }
+
+        .card.matched {
+            background: #4caf50;
+            border-color: #2e7d32;
+            transform: scale(1.2);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .card.locked-gameover {
+            pointer-events: none;
+            opacity: 0.7;
+            cursor: default;
+        }
+
+        .win-screen, .lose-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+            z-index: 100;
+        }
+
+        .win-screen.show, .lose-screen.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .win-screen h1 {
+            font-size: 64px;
+            color: #f8c820;
+            text-shadow: 4px 4px 0 #b87c00;
+            margin-bottom: 20px;
+        }
+        .lose-screen h1 {
+            font-size: 64px;
+            color: #ff4444;
+            text-shadow: 4px 4px 0 #990000;
+            margin-bottom: 20px;
+        }
+
+        .btn-reset {
+            padding: 15px 40px;
+            font-size: 24px;
+            font-family: 'Arial Black', sans-serif;
+            background: #f8c820;
+            color: #b87c00;
+            border: 4px solid #b87c00;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.6), 
+                        inset -4px -4px 0 rgba(0, 0, 0, 0.25);
+            transition: transform 0.1s;
+        }
+
+        .btn-reset:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>Score: <span id="score">0</span></div>
+        <div>Pairs Left: <span id="remaining">6</span></div>
+    </div>
+
+    <div class="grid-container" id="grid"></div>
+
+    <div class="win-screen" id="winScreen">
+        <h1>YOU WIN!</h1>
+        <button class="btn-reset" onclick="resetGame()">Play Again</button>
+    </div>
+
+    <div class="lose-screen" id="loseScreen">
+        <h1>YOU LOSE!</h1>
+        <button class="btn-reset" onclick="resetGame()">Try Again</button>
+    </div>
+
+    <audio id="bgm" src="bgm.mp3" loop>
+    <audio id="soundSuccess" src="1.mp3">
+    <audio id="soundFail" src="2.mp3">
+    <audio id="soundWin" src="3.mp3">
+    <audio id="soundLose" src="4.mp3">
+
+<script>
+const icons = ['🍄', '⭐', '🌻', '💰', '🐢', '🔥']; 
+let flippedCards = [];
+let matchedPairs = 0;
+let score = 40;
+let isLocked = false;
+let gameOver = false;
+let bgmStarted = false;
+
+const grid = document.getElementById('grid');
+const scoreEl = document.getElementById('score');
+const remainingEl = document.getElementById('remaining');
+const winScreen = document.getElementById('winScreen');
+const loseScreen = document.getElementById('loseScreen');
+
+const bgm = document.getElementById('bgm');
+const soundSuccess = document.getElementById('soundSuccess');
+const soundFail = document.getElementById('soundFail');
+const soundWin = document.getElementById('soundWin');
+const soundLose = document.getElementById('soundLose');
+
+function initGame() {
+    grid.innerHTML = '';
+    winScreen.classList.remove('show');
+    loseScreen.classList.remove('show');
+    flippedCards = [];
+    matchedPairs = 0;
+    score = 40;
+    isLocked = false;
+    gameOver = false;
+    updateUI();
+
+    let deck = [...icons, ...icons];
+    for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+
+    deck.forEach(icon => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.dataset.icon = icon;
+        card.innerText = '?';
+        card.addEventListener('click', () => handleCardClick(card));
+        grid.appendChild(card);
+    });
+}
+
+function handleCardClick(card) {
+    if (isLocked || card.classList.contains('flipped') || card.classList.contains('matched') || gameOver) {
+        return;
+    }
+
+    if (!bgmStarted) {
+        bgm.play().then(()=>{
+            bgmStarted = true;
+        }).catch(e=>console.log("点击卡片启动bgm失败",e));
+    }
+
+    card.classList.add('flipped');
+    card.innerText = card.dataset.icon;
+    flippedCards.push(card);
+
+    if (flippedCards.length === 2) {
+        checkMatch();
+    }
+}
+
+function checkMatch() {
+    isLocked = true;
+    const [card1, card2] = flippedCards;
+
+    if (card1.dataset.icon === card2.dataset.icon) {
+        setTimeout(() => {
+            soundSuccess.currentTime = 0;
+            soundSuccess.play().catch(e=>console.log("success音效失败",e));
+
+            card1.classList.add('matched');
+            card2.classList.add('matched');
+            flippedCards = [];
+            isLocked = false;
+            score += 100;
+            matchedPairs++;
+            updateUI();
+            checkWin();
+        }, 500);
+    } else {
+        setTimeout(() => {
+            soundFail.currentTime = 0;
+            soundFail.play().catch(e=>console.log("fail音效失败",e));
+
+            card1.classList.remove('flipped');
+            card2.classList.remove('flipped');
+            card1.innerText = '?';
+            card2.innerText = '?';
+            flippedCards = [];
+            isLocked = false;
+            score = Math.max(0, score - 10);
+            updateUI();
+            checkLose();
+        }, 1000);
+    }
+}
+
+function checkWin() {
+    if (matchedPairs === icons.length) {
+        setTimeout(() => {
+            gameOver = true;
+            bgm.pause();
+            bgm.currentTime = 0;
+            soundWin.currentTime = 0;
+            soundWin.play().catch(e=>console.log("win音效失败",e));
+            winScreen.classList.add('show');
+        }, 600);
+    }
+}
+
+function checkLose() {
+    if (score <= 0) {
+        gameOver = true;
+        document.querySelectorAll('.card').forEach(c => {
+            c.classList.add('locked-gameover');
+        });
+        bgm.pause();
+        bgm.currentTime = 0;
+        soundLose.currentTime = 0;
+        soundLose.play().catch(e=>console.log("lose音效失败",e));
+        loseScreen.classList.add('show');
+    }
+}
+
+function updateUI() {
+    scoreEl.innerText = score;
+    remainingEl.innerText = icons.length - matchedPairs;
+}
+
+function resetGame() {
+    bgmStarted = false;
+    initGame();
+}
+
+initGame();
+</script>
+</body>
+</html>
